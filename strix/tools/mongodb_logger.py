@@ -36,9 +36,34 @@ class MongoDBLogger:
         try:
             self.client = MongoClient(self.uri, serverSelectionTimeoutMS=5000)
             self.db = self.client[database]
-            self.collection = self.db[collection]
+
             # Verify connection
             self.client.admin.command('ping')
+
+            # Create time series collection if it doesn't exist
+            existing_collections = self.db.list_collection_names()
+            if collection not in existing_collections:
+                print(f"Creating time series collection: {database}.{collection}")
+                self.db.create_collection(
+                    collection,
+                    timeseries={
+                        "timeField": "timestamp",
+                        "metaField": "metadata",
+                        "granularity": "seconds"
+                    },
+                    expireAfterSeconds=60*60*24*90  # 90-day TTL
+                )
+
+            self.collection = self.db[collection]
+
+            # Create indexes for efficient querying
+            try:
+                self.collection.create_index([("metadata.run_id", 1)])
+                self.collection.create_index([("metadata.level", 1)])
+                self.collection.create_index([("metadata.agent_id", 1), ("timestamp", -1)])
+            except PyMongoError:
+                pass  # Indexes may already exist or collection is time series
+
             print(f"✓ Connected to MongoDB: {database}.{collection}")
         except PyMongoError as e:
             raise ConnectionError(f"Failed to connect to MongoDB: {e}")
@@ -73,12 +98,15 @@ class MongoDBLogger:
             # Fallback to previous behavior
             calling_id = f"{stack[1].filename}:{stack[1].function}:{stack[1].lineno}"
 
+        # Time series format: timestamp + metadata
         log_entry = {
-            "run_id": run_id,
-            "agent_id": agent_id,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "calling_id": calling_id,
-            "level": level,
+            "timestamp": datetime.now(timezone.utc),
+            "metadata": {
+                "run_id": run_id,
+                "agent_id": agent_id,
+                "calling_id": calling_id,
+                "level": level,
+            },
             "content": content
         }
 
