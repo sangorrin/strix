@@ -15,6 +15,7 @@ from .runtime import AbstractRuntime, SandboxInfo
 
 
 STRIX_IMAGE = os.getenv("STRIX_IMAGE", "ghcr.io/usestrix/strix-sandbox:0.1.10")
+MONGODB_URI = os.getenv("MONGODB_URI", "")
 logger = logging.getLogger(__name__)
 
 
@@ -121,6 +122,7 @@ class DockerRuntime(AbstractRuntime):
                         "CAIDO_PORT": str(caido_port),
                         "TOOL_SERVER_PORT": str(tool_server_port),
                         "TOOL_SERVER_TOKEN": tool_server_token,
+                        "MONGODB_URI": MONGODB_URI,
                     },
                     tty=True,
                 )

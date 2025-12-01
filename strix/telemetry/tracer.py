@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+import strix.tools.mongodb_logger as mongodb_logger
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
@@ -127,6 +128,20 @@ class Tracer:
         }
 
         self.agents[agent_id] = agent_data
+
+        # Log agent creation to MongoDB
+        try:
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
+            logger_proxy.info({
+                "event": "agent_creation",
+                "agent_id": agent_id,
+                "name": name,
+                "task": task,
+                "parent_id": parent_id,
+                "created_at": agent_data["created_at"],
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log agent creation to MongoDB: {e}")
 
     def log_chat_message(
         self,
