@@ -351,7 +351,58 @@ class BaseAgent(metaclass=AgentMeta):
         self.state.add_message("user", task)
 
     async def _process_iteration(self, tracer: Optional["Tracer"]) -> bool:
-        response = await self.llm.generate(self.state.get_conversation_history())
+        # Log LLM request to MongoDB
+        conversation_history = self.state.get_conversation_history()
+        try:
+            import strix.tools.mongodb_logger as mongodb_logger
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=tracer.run_id if tracer else "unknown",
+                agent_id=self.state.agent_id
+            )
+
+            # Truncate conversation history for logging
+            total_messages = len(conversation_history)
+            history_preview = conversation_history[-1:] if total_messages > 1 else conversation_history
+
+            logger_proxy.info({
+                "event": "llm_request",
+                "iteration": self.state.iteration,
+                "model": self.llm_config.model_name if self.llm_config else "unknown",
+                "total_messages": total_messages,
+                "conversation_preview": history_preview,
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log LLM request to MongoDB: {e}")
+
+        response = await self.llm.generate(conversation_history)
+
+        # Log LLM response to MongoDB
+        try:
+            import strix.tools.mongodb_logger as mongodb_logger
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=tracer.run_id if tracer else "unknown",
+                agent_id=self.state.agent_id
+            )
+
+            response_content = (response.content or "").strip()
+            if len(response_content) > 2000:
+                truncated_chars = len(response_content) - 2000
+                response_preview = (
+                    response_content[:1000]
+                    + f"\n...[truncated {truncated_chars} chars]...\n"
+                    + response_content[-1000:]
+                )
+            else:
+                response_preview = response_content
+
+            logger_proxy.info({
+                "event": "llm_response",
+                "iteration": self.state.iteration,
+                "response_preview": response_preview,
+                "tool_invocations": response.tool_invocations if hasattr(response, "tool_invocations") else None,
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log LLM response to MongoDB: {e}")
 
         content_stripped = (response.content or "").strip()
 
