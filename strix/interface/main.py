@@ -317,15 +317,20 @@ Examples:
     args = parser.parse_args()
 
     if args.instruction:
-        instruction_path = Path(args.instruction)
-        if instruction_path.exists() and instruction_path.is_file():
-            try:
-                with instruction_path.open(encoding="utf-8") as f:
-                    args.instruction = f.read().strip()
-                    if not args.instruction:
-                        parser.error(f"Instruction file '{instruction_path}' is empty")
-            except Exception as e:  # noqa: BLE001
-                parser.error(f"Failed to read instruction file '{instruction_path}': {e}")
+        try:
+            max_filename_len = os.pathconf('.', 'PC_NAME_MAX')
+        except (AttributeError, ValueError, OSError):
+            max_filename_len = 255  # Fallback to common default
+        if len(args.instruction) <= max_filename_len:
+            instruction_path = Path(args.instruction)
+            if instruction_path.exists() and instruction_path.is_file():
+                try:
+                    with instruction_path.open(encoding="utf-8") as f:
+                        args.instruction = f.read().strip()
+                        if not args.instruction:
+                            parser.error(f"Instruction file '{instruction_path}' is empty")
+                except Exception as e:  # noqa: BLE001
+                    parser.error(f"Failed to read instruction file '{instruction_path}': {e}")
 
     args.targets_info = []
     for target in args.target:
