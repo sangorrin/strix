@@ -55,7 +55,9 @@ class MongoDBLogStreamer:
         self,
         run_id: str,
         event_filter: Optional[list[str]] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """
         Fetch new log entries since last fetch.
@@ -64,6 +66,8 @@ class MongoDBLogStreamer:
             run_id: Run ID to filter logs
             event_filter: Optional list of event types to filter
             user_id: Optional user ID to filter logs
+            agent_id: Optional agent ID to filter logs
+            agent_name: Optional agent name to filter logs
 
         Returns:
             List of log entries
@@ -75,6 +79,14 @@ class MongoDBLogStreamer:
         # Filter by user_id if specified
         if user_id:
             query["metadata.user_id"] = user_id
+
+        # Filter by agent_id if specified
+        if agent_id:
+            query["metadata.agent_id"] = agent_id
+
+        # Filter by agent_name if specified
+        if agent_name:
+            query["metadata.agent_name"] = agent_name
 
         # Only fetch entries newer than last timestamp
         if self.last_timestamp:
@@ -124,6 +136,7 @@ class MongoDBLogStreamer:
             "timestamp": ts_str,
             "user_id": metadata.get("user_id", "default_user"),
             "agent_id": metadata.get("agent_id", "unknown"),
+            "agent_name": metadata.get("agent_name", "unknown"),
             "level": metadata.get("level", "INFO"),
             "content": content
         }
@@ -135,6 +148,8 @@ class MongoDBLogStreamer:
         run_id: str,
         event_filter: Optional[list[str]] = None,
         user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
         polling_interval: int = 3
     ) -> None:
         """
@@ -144,11 +159,17 @@ class MongoDBLogStreamer:
             run_id: Run ID to stream
             event_filter: Optional event type filter
             user_id: Optional user ID filter
+            agent_id: Optional agent ID filter
+            agent_name: Optional agent name filter
             polling_interval: Polling interval in seconds
         """
         print(f"Streaming logs for run_id: {run_id}", file=sys.stderr)
         if user_id:
             print(f"User ID filter: {user_id}", file=sys.stderr)
+        if agent_id:
+            print(f"Agent ID filter: {agent_id}", file=sys.stderr)
+        if agent_name:
+            print(f"Agent name filter: {agent_name}", file=sys.stderr)
         if event_filter:
             print(f"Event filter: {', '.join(event_filter)}", file=sys.stderr)
         print(f"Polling interval: {polling_interval}s", file=sys.stderr)
@@ -156,7 +177,7 @@ class MongoDBLogStreamer:
 
         try:
             while True:
-                logs = self.fetch_logs(run_id, event_filter, user_id)
+                logs = self.fetch_logs(run_id, event_filter, user_id, agent_id, agent_name)
 
                 for log in logs:
                     print(self.format_log_entry(log))
@@ -213,6 +234,16 @@ Examples:
     )
 
     parser.add_argument(
+        "--agent-id",
+        help="Agent ID to filter logs (e.g., agent_a1b2c3d4)"
+    )
+
+    parser.add_argument(
+        "--agent-name",
+        help="Agent name to filter logs (e.g., 'Strix Agent', 'Vulnerability Scanner')"
+    )
+
+    parser.add_argument(
         "--events",
         help="Comma-separated list of event types to filter (default: all events). "
              "Available events: live_stats_update, vuln_plan, vulnerability_found, scan_complete, "
@@ -258,6 +289,8 @@ Examples:
             run_id=args.run_name,
             event_filter=event_filter,
             user_id=args.user_id,
+            agent_id=args.agent_id,
+            agent_name=args.agent_name,
             polling_interval=args.polling
         )
 

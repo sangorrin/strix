@@ -62,6 +62,7 @@ class MongoDBLogger:
                 self.collection.create_index([("metadata.run_id", 1)])
                 self.collection.create_index([("metadata.level", 1)])
                 self.collection.create_index([("metadata.agent_id", 1), ("timestamp", -1)])
+                self.collection.create_index([("metadata.agent_name", 1), ("timestamp", -1)])
             except PyMongoError:
                 pass  # Indexes may already exist or collection is time series
 
@@ -74,6 +75,7 @@ class MongoDBLogger:
         content: Any,
         run_id: str,
         agent_id: str,
+        agent_name: str = "unknown",
         level: str = "INFO",
         user_id: str = "default_user"
     ) -> None:
@@ -84,6 +86,7 @@ class MongoDBLogger:
             content: The log content (any JSON-serializable type)
             run_id: Unique identifier for the program execution
             agent_id: Identifier for the specific agent/thread
+            agent_name: Human-readable name of the agent
             level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             user_id: User identifier for multi-tenant logging
         """
@@ -108,6 +111,7 @@ class MongoDBLogger:
                 "user_id": user_id,
                 "run_id": run_id,
                 "agent_id": agent_id,
+                "agent_name": agent_name,
                 "calling_id": calling_id,
                 "level": level,
             },
@@ -130,48 +134,50 @@ class MongoDBLogger:
 # Singleton instance for easy import
 _logger_instance: Optional[MongoDBLogger] = None
 
-def get_logger(run_id: str, agent_id: str, user_id: str = "default_user") -> 'LoggerProxy':
+def get_logger(run_id: str, agent_id: str, agent_name: str = "unknown", user_id: str = "default_user") -> 'LoggerProxy':
     """
     Get or create MongoDB logger instance.
 
     Args:
         run_id: Unique execution identifier
         agent_id: Agent/thread identifier
+        agent_name: Human-readable agent name
         user_id: User identifier for multi-tenant logging
 
     Returns:
-        LoggerProxy with run_id/agent_id/user_id bound
+        LoggerProxy with run_id/agent_id/agent_name/user_id bound
     """
     global _logger_instance
     if _logger_instance is None:
         _logger_instance = MongoDBLogger()
 
-    return LoggerProxy(_logger_instance, run_id, agent_id, user_id)
+    return LoggerProxy(_logger_instance, run_id, agent_id, agent_name, user_id)
 
 
 class LoggerProxy:
-    """Proxy to bind run_id, agent_id, and user_id to logger calls."""
+    """Proxy to bind run_id, agent_id, agent_name, and user_id to logger calls."""
 
-    def __init__(self, logger: MongoDBLogger, run_id: str, agent_id: str, user_id: str = "default_user"):
+    def __init__(self, logger: MongoDBLogger, run_id: str, agent_id: str, agent_name: str = "unknown", user_id: str = "default_user"):
         self._logger = logger
         self._run_id = run_id
         self._agent_id = agent_id
+        self._agent_name = agent_name
         self._user_id = user_id
 
     def debug(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "DEBUG", self._user_id)
+        self._logger.log(content, self._run_id, self._agent_id, self._agent_name, "DEBUG", self._user_id)
 
     def info(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "INFO", self._user_id)
+        self._logger.log(content, self._run_id, self._agent_id, self._agent_name, "INFO", self._user_id)
 
     def warning(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "WARNING", self._user_id)
+        self._logger.log(content, self._run_id, self._agent_id, self._agent_name, "WARNING", self._user_id)
 
     def error(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "ERROR", self._user_id)
+        self._logger.log(content, self._run_id, self._agent_id, self._agent_name, "ERROR", self._user_id)
 
     def critical(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "CRITICAL", self._user_id)
+        self._logger.log(content, self._run_id, self._agent_id, self._agent_name, "CRITICAL", self._user_id)
 
 
 # Example usage
