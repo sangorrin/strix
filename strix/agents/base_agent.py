@@ -84,11 +84,20 @@ class BaseAgent(metaclass=AgentMeta):
 
         tracer = get_global_tracer()
         if tracer:
+            # Pass prompt modules so tracer can record vulnerability-focused agents
+            prompt_modules = []
+            try:
+                prompt_modules = list(self.llm_config.prompt_modules or [])
+            except Exception:
+                prompt_modules = []
+
             tracer.log_agent_creation(
                 agent_id=self.state.agent_id,
                 name=self.state.agent_name,
                 task=self.state.task,
                 parent_id=self.state.parent_id,
+                prompt_modules=prompt_modules,
+                max_iterations=self.state.max_iterations,
             )
             if self.state.parent_id is None:
                 scan_config = tracer.scan_config or {}
@@ -364,9 +373,10 @@ class BaseAgent(metaclass=AgentMeta):
             total_messages = len(conversation_history)
             history_preview = conversation_history[-1:] if total_messages > 1 else conversation_history
 
-            logger_proxy.info({
+            logger_proxy.debug({
                 "event": "llm_request",
                 "iteration": self.state.iteration,
+                "max_iterations": self.state.max_iterations,
                 "model": self.llm_config.model_name if self.llm_config else "unknown",
                 "total_messages": total_messages,
                 "conversation_preview": history_preview,
@@ -395,7 +405,7 @@ class BaseAgent(metaclass=AgentMeta):
             else:
                 response_preview = response_content
 
-            logger_proxy.info({
+            logger_proxy.debug({
                 "event": "llm_response",
                 "iteration": self.state.iteration,
                 "response_preview": response_preview,

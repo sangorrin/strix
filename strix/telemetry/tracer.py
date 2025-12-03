@@ -53,11 +53,32 @@ class Tracer:
         self._next_message_id = 1
         self._saved_vuln_ids: set[str] = set()
 
+        # Track vulnerability plan logging
+        self._vuln_plan_logged: bool = False
+
         self.vulnerability_found_callback: Callable[[str, str, str, str], None] | None = None
 
     def set_run_name(self, run_name: str) -> None:
         self.run_name = run_name
         self.run_id = run_name
+
+    def log_vulnerability_plan(self, vulnerability_types: list[str]) -> None:
+        """Log the planned vulnerability types to be tested (called once at scan start)."""
+        if self._vuln_plan_logged:
+            return  # Only log once
+
+        self._vuln_plan_logged = True
+        try:
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system")
+            logger_proxy.info({
+                "event": "vuln_plan",
+                "vulnerability_types": vulnerability_types,
+                "total_types": len(vulnerability_types),
+                "timestamp": datetime.now(UTC).isoformat(),
+            })
+            logger.info(f"Vulnerability plan logged: {len(vulnerability_types)} types")
+        except Exception as e:
+            logger.warning(f"Failed to log vulnerability plan to MongoDB: {e}")
 
     def get_run_dir(self) -> Path:
         if self._run_dir is None:
@@ -96,6 +117,7 @@ class Tracer:
                 "report_id": report_id,
                 "title": title.strip(),
                 "severity": severity.lower().strip(),
+                "content": content.strip(),
             })
         except Exception as e:
             logger.warning(f"Failed to log vulnerability report to MongoDB: {e}")
@@ -136,7 +158,13 @@ class Tracer:
         self.save_run_data(mark_complete=True)
 
     def log_agent_creation(
-        self, agent_id: str, name: str, task: str, parent_id: str | None = None
+        self,
+        agent_id: str,
+        name: str,
+        task: str,
+        parent_id: str | None = None,
+        prompt_modules: list[str] | None = None,
+        max_iterations: int | None = None,
     ) -> None:
         agent_data: dict[str, Any] = {
             "id": agent_id,
@@ -144,6 +172,8 @@ class Tracer:
             "task": task,
             "status": "running",
             "parent_id": parent_id,
+            "prompt_modules": prompt_modules or [],
+            "max_iterations": max_iterations,
             "created_at": datetime.now(UTC).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
             "tool_executions": [],
@@ -154,12 +184,30 @@ class Tracer:
         # Log agent creation to MongoDB
         try:
             logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
-            logger_proxy.info({
+
+            log_payload = {
                 "event": "agent_creation",
                 "name": name,
                 "task": task,
                 "parent_id": parent_id,
-            })
+                "prompt_modules": prompt_modules or [],
+                "max_iterations": max_iterations,
+            }
+
+            # If any prompt modules belong to vulnerabilities, surface them as vulnerability_types
+            try:
+                from strix.prompts import get_available_prompt_modules
+
+                available = get_available_prompt_modules()
+                vuln_modules = set(available.get("vulnerabilities", []))
+                selected = [m for m in (prompt_modules or []) if m in vuln_modules]
+                if selected:
+                    log_payload["vulnerability_types"] = selected
+            except Exception:
+                # Non-fatal if prompts module can't be inspected
+                pass
+
+            logger_proxy.info(log_payload)
         except Exception as e:
             logger.warning(f"Failed to log agent creation to MongoDB: {e}")
 
@@ -185,7 +233,9 @@ class Tracer:
         self.chat_messages.append(message_data)
         return message_id
 
-    def log_tool_execution_start(self, agent_id: str, tool_name: str, args: dict[str, Any]) -> int:
+    def log_tool_execution_start(
+        self, agent_id: str, tool_name: str, args: dict[str, Any], iteration: int | None = None
+    ) -> int:
         execution_id = self._next_execution_id
         self._next_execution_id += 1
 
@@ -200,6 +250,7 @@ class Tracer:
             "timestamp": now,
             "started_at": now,
             "completed_at": None,
+            "iteration": iteration,
         }
 
         self.tool_executions[execution_id] = execution_data
@@ -209,12 +260,39 @@ class Tracer:
 
         try:
             logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
-            logger_proxy.info({
+
+            # Enrich tool execution logs for vulnerability-focused agents
+            payload = {
                 "event": "tool_execution_start",
                 "execution_id": execution_id,
                 "tool_name": tool_name,
                 "args": args,
-            })
+            }
+
+            if iteration is not None:
+                payload["iteration"] = iteration
+
+            agent_info = self.agents.get(agent_id, {})
+            if agent_info:
+                max_iterations = agent_info.get("max_iterations")
+                if max_iterations:
+                    payload["max_iterations"] = max_iterations
+
+                if agent_info.get("prompt_modules"):
+                    payload["prompt_modules"] = agent_info.get("prompt_modules")
+                # If this agent is focused on vulnerabilities, emit a vuln step event
+                try:
+                    from strix.prompts import get_available_prompt_modules
+
+                    vuln_modules = set(get_available_prompt_modules().get("vulnerabilities", []))
+                    selected = [m for m in agent_info.get("prompt_modules", []) if m in vuln_modules]
+                    if selected:
+                        payload["event"] = "vuln_step_start"
+                        payload["vulnerability_types"] = selected
+                except Exception:
+                    pass
+
+            logger_proxy.info(payload)
         except Exception as e:
             logger.warning(f"Failed to log tool execution start to MongoDB: {e}")
 
@@ -232,13 +310,40 @@ class Tracer:
                 exec_data = self.tool_executions[execution_id]
                 agent_id = exec_data.get("agent_id", "unknown")
                 logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
-                logger_proxy.info({
+
+                payload = {
                     "event": "tool_execution_complete",
                     "execution_id": execution_id,
                     "tool_name": exec_data.get("tool_name"),
                     "status": status,
                     "result": result[:100] if isinstance(result, str) else result,
-                })
+                }
+
+                # Include iteration if it was logged at start
+                iteration = exec_data.get("iteration")
+                if iteration is not None:
+                    payload["iteration"] = iteration
+
+                agent_info = self.agents.get(agent_id, {})
+                if agent_info:
+                    max_iterations = agent_info.get("max_iterations")
+                    if max_iterations:
+                        payload["max_iterations"] = max_iterations
+
+                    if agent_info.get("prompt_modules"):
+                        payload["prompt_modules"] = agent_info.get("prompt_modules")
+                    try:
+                        from strix.prompts import get_available_prompt_modules
+
+                        vuln_modules = set(get_available_prompt_modules().get("vulnerabilities", []))
+                        selected = [m for m in agent_info.get("prompt_modules", []) if m in vuln_modules]
+                        if selected:
+                            payload["event"] = "vuln_step_complete"
+                            payload["vulnerability_types"] = selected
+                    except Exception:
+                        pass
+
+                logger_proxy.info(payload)
             except Exception as e:
                 logger.warning(f"Failed to log tool execution completion to MongoDB: {e}")
 

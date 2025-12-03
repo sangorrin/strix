@@ -251,6 +251,32 @@ def create_agent(
 
         agent = StrixAgent(agent_config)
 
+        # Log vulnerability plan when first vulnerability-focused agent is created
+        if module_list:
+            try:
+                from strix.prompts import get_available_prompt_modules
+                from strix.telemetry.tracer import get_global_tracer
+
+                tracer = get_global_tracer()
+                if tracer and not tracer._vuln_plan_logged:
+                    vuln_modules_available = set(
+                        get_available_prompt_modules().get("vulnerabilities", [])
+                    )
+                    # Check if any of the modules are vulnerability types
+                    vuln_types_in_agent = [m for m in module_list if m in vuln_modules_available]
+                    if vuln_types_in_agent:
+                        # Collect all vulnerability types from all agents
+                        all_vuln_types = set(vuln_types_in_agent)
+                        for agent_data in _agent_graph["nodes"].values():
+                            agent_modules = agent_data.get("state", {}).get("prompt_modules", [])
+                            all_vuln_types.update(
+                                [m for m in agent_modules if m in vuln_modules_available]
+                            )
+                        if all_vuln_types:
+                            tracer.log_vulnerability_plan(sorted(all_vuln_types))
+            except Exception:
+                pass  # Non-fatal
+
         inherited_messages = []
         if inherit_context:
             inherited_messages = agent_state.get_conversation_history()

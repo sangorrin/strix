@@ -209,7 +209,9 @@ async def _execute_single_tool(
     should_agent_finish = False
 
     if tracer:
-        execution_id = tracer.log_tool_execution_start(agent_id, tool_name, args)
+        # Pass iteration from agent state if available
+        iteration = agent_state.iteration if agent_state else None
+        execution_id = tracer.log_tool_execution_start(agent_id, tool_name, args, iteration)
 
     try:
         result = await execute_tool_invocation(tool_inv, agent_state)
