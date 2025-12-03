@@ -279,7 +279,8 @@ class StrixTUIApp(App):  # type: ignore[misc]
         self.scan_config = self._build_scan_config(args)
         self.agent_config = self._build_agent_config(args)
 
-        self.tracer = Tracer(self.scan_config["run_name"])
+        user_id = getattr(args, "user_id", "default_user")
+        self.tracer = Tracer(self.scan_config["run_name"], user_id=user_id)
         self.tracer.set_scan_config(self.scan_config)
         set_global_tracer(self.tracer)
 

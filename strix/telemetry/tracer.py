@@ -25,9 +25,10 @@ def set_global_tracer(tracer: "Tracer") -> None:
 
 
 class Tracer:
-    def __init__(self, run_name: str | None = None):
+    def __init__(self, run_name: str | None = None, user_id: str = "default_user"):
         self.run_name = run_name
         self.run_id = run_name or f"run-{uuid4().hex[:8]}"
+        self.user_id = user_id
         self.start_time = datetime.now(UTC).isoformat()
         self.end_time: str | None = None
 
@@ -43,6 +44,7 @@ class Tracer:
         self.run_metadata: dict[str, Any] = {
             "run_id": self.run_id,
             "run_name": self.run_name,
+            "user_id": self.user_id,
             "start_time": self.start_time,
             "end_time": None,
             "targets": [],
@@ -69,7 +71,7 @@ class Tracer:
 
         self._vuln_plan_logged = True
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system")
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system", user_id=self.user_id)
             logger_proxy.info({
                 "event": "vuln_plan",
                 "vulnerability_types": vulnerability_types,
@@ -111,7 +113,7 @@ class Tracer:
         logger.info(f"Added vulnerability report: {report_id} - {title}")
 
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system")
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system", user_id=self.user_id)
             logger_proxy.info({
                 "event": "vulnerability_found",
                 "report_id": report_id,
@@ -146,7 +148,7 @@ class Tracer:
         logger.info(f"Set final scan result: success={success}")
 
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system")
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system", user_id=self.user_id)
             logger_proxy.info({
                 "event": "scan_complete",
                 "success": success,
@@ -183,7 +185,7 @@ class Tracer:
 
         # Log agent creation to MongoDB
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, user_id=self.user_id)
 
             log_payload = {
                 "event": "agent_creation",
@@ -259,7 +261,7 @@ class Tracer:
             self.agents[agent_id]["tool_executions"].append(execution_id)
 
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, user_id=self.user_id)
 
             # Enrich tool execution logs for vulnerability-focused agents
             payload = {
@@ -309,7 +311,7 @@ class Tracer:
             try:
                 exec_data = self.tool_executions[execution_id]
                 agent_id = exec_data.get("agent_id", "unknown")
-                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
+                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, user_id=self.user_id)
 
                 payload = {
                     "event": "tool_execution_complete",
@@ -357,7 +359,7 @@ class Tracer:
                 self.agents[agent_id]["error_message"] = error_message
 
             try:
-                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id)
+                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, user_id=self.user_id)
                 log_content = {
                     "event": "agent_status_update",
                     "status": status,
@@ -380,7 +382,7 @@ class Tracer:
         self.get_run_dir()
 
         try:
-            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system")
+            logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id="system", user_id=self.user_id)
             logger_proxy.info({
                 "event": "scan_config_set",
                 "targets": config.get("targets", []),

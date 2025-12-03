@@ -58,6 +58,7 @@ class MongoDBLogger:
 
             # Create indexes for efficient querying
             try:
+                self.collection.create_index([("metadata.user_id", 1)])
                 self.collection.create_index([("metadata.run_id", 1)])
                 self.collection.create_index([("metadata.level", 1)])
                 self.collection.create_index([("metadata.agent_id", 1), ("timestamp", -1)])
@@ -73,7 +74,8 @@ class MongoDBLogger:
         content: Any,
         run_id: str,
         agent_id: str,
-        level: str = "INFO"
+        level: str = "INFO",
+        user_id: str = "default_user"
     ) -> None:
         """
         Log a message to MongoDB.
@@ -83,6 +85,7 @@ class MongoDBLogger:
             run_id: Unique identifier for the program execution
             agent_id: Identifier for the specific agent/thread
             level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            user_id: User identifier for multi-tenant logging
         """
         # Get caller information
         stack = inspect.stack()
@@ -102,6 +105,7 @@ class MongoDBLogger:
         log_entry = {
             "timestamp": datetime.now(timezone.utc),
             "metadata": {
+                "user_id": user_id,
                 "run_id": run_id,
                 "agent_id": agent_id,
                 "calling_id": calling_id,
@@ -126,46 +130,48 @@ class MongoDBLogger:
 # Singleton instance for easy import
 _logger_instance: Optional[MongoDBLogger] = None
 
-def get_logger(run_id: str, agent_id: str) -> 'LoggerProxy':
+def get_logger(run_id: str, agent_id: str, user_id: str = "default_user") -> 'LoggerProxy':
     """
     Get or create MongoDB logger instance.
 
     Args:
         run_id: Unique execution identifier
         agent_id: Agent/thread identifier
+        user_id: User identifier for multi-tenant logging
 
     Returns:
-        LoggerProxy with run_id/agent_id bound
+        LoggerProxy with run_id/agent_id/user_id bound
     """
     global _logger_instance
     if _logger_instance is None:
         _logger_instance = MongoDBLogger()
 
-    return LoggerProxy(_logger_instance, run_id, agent_id)
+    return LoggerProxy(_logger_instance, run_id, agent_id, user_id)
 
 
 class LoggerProxy:
-    """Proxy to bind run_id and agent_id to logger calls."""
+    """Proxy to bind run_id, agent_id, and user_id to logger calls."""
 
-    def __init__(self, logger: MongoDBLogger, run_id: str, agent_id: str):
+    def __init__(self, logger: MongoDBLogger, run_id: str, agent_id: str, user_id: str = "default_user"):
         self._logger = logger
         self._run_id = run_id
         self._agent_id = agent_id
+        self._user_id = user_id
 
     def debug(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "DEBUG")
+        self._logger.log(content, self._run_id, self._agent_id, "DEBUG", self._user_id)
 
     def info(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "INFO")
+        self._logger.log(content, self._run_id, self._agent_id, "INFO", self._user_id)
 
     def warning(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "WARNING")
+        self._logger.log(content, self._run_id, self._agent_id, "WARNING", self._user_id)
 
     def error(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "ERROR")
+        self._logger.log(content, self._run_id, self._agent_id, "ERROR", self._user_id)
 
     def critical(self, content: Any):
-        self._logger.log(content, self._run_id, self._agent_id, "CRITICAL")
+        self._logger.log(content, self._run_id, self._agent_id, "CRITICAL", self._user_id)
 
 
 # Example usage

@@ -80,7 +80,8 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
     if getattr(args, "local_sources", None):
         agent_config["local_sources"] = args.local_sources
 
-    tracer = Tracer(args.run_name)
+    user_id = getattr(args, "user_id", "default_user")
+    tracer = Tracer(args.run_name, user_id=user_id)
     tracer.set_scan_config(scan_config)
 
     def display_vulnerability(report_id: str, title: str, content: str, severity: str) -> None:

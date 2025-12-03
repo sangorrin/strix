@@ -366,7 +366,8 @@ class BaseAgent(metaclass=AgentMeta):
             import strix.tools.mongodb_logger as mongodb_logger
             logger_proxy = mongodb_logger.get_logger(
                 run_id=tracer.run_id if tracer else "unknown",
-                agent_id=self.state.agent_id
+                agent_id=self.state.agent_id,
+                user_id=tracer.user_id if tracer else "default_user"
             )
 
             # Truncate conversation history for logging
@@ -391,7 +392,8 @@ class BaseAgent(metaclass=AgentMeta):
             import strix.tools.mongodb_logger as mongodb_logger
             logger_proxy = mongodb_logger.get_logger(
                 run_id=tracer.run_id if tracer else "unknown",
-                agent_id=self.state.agent_id
+                agent_id=self.state.agent_id,
+                user_id=tracer.user_id if tracer else "default_user"
             )
 
             response_content = (response.content or "").strip()

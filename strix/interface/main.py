@@ -305,6 +305,13 @@ Examples:
     )
 
     parser.add_argument(
+        "--user-id",
+        type=str,
+        default="default_user",
+        help="User identifier for multi-tenant logging (default: default_user)",
+    )
+
+    parser.add_argument(
         "-n",
         "--non-interactive",
         action="store_true",

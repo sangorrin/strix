@@ -54,7 +54,8 @@ class MongoDBLogStreamer:
     def fetch_logs(
         self,
         run_id: str,
-        event_filter: Optional[list[str]] = None
+        event_filter: Optional[list[str]] = None,
+        user_id: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """
         Fetch new log entries since last fetch.
@@ -62,6 +63,7 @@ class MongoDBLogStreamer:
         Args:
             run_id: Run ID to filter logs
             event_filter: Optional list of event types to filter
+            user_id: Optional user ID to filter logs
 
         Returns:
             List of log entries
@@ -69,6 +71,10 @@ class MongoDBLogStreamer:
         query: dict[str, Any] = {
             "metadata.run_id": run_id
         }
+
+        # Filter by user_id if specified
+        if user_id:
+            query["metadata.user_id"] = user_id
 
         # Only fetch entries newer than last timestamp
         if self.last_timestamp:
@@ -116,6 +122,7 @@ class MongoDBLogStreamer:
         # Build formatted output
         output = {
             "timestamp": ts_str,
+            "user_id": metadata.get("user_id", "default_user"),
             "agent_id": metadata.get("agent_id", "unknown"),
             "level": metadata.get("level", "INFO"),
             "content": content
@@ -127,6 +134,7 @@ class MongoDBLogStreamer:
         self,
         run_id: str,
         event_filter: Optional[list[str]] = None,
+        user_id: Optional[str] = None,
         polling_interval: int = 3
     ) -> None:
         """
@@ -135,9 +143,12 @@ class MongoDBLogStreamer:
         Args:
             run_id: Run ID to stream
             event_filter: Optional event type filter
+            user_id: Optional user ID filter
             polling_interval: Polling interval in seconds
         """
         print(f"Streaming logs for run_id: {run_id}", file=sys.stderr)
+        if user_id:
+            print(f"User ID filter: {user_id}", file=sys.stderr)
         if event_filter:
             print(f"Event filter: {', '.join(event_filter)}", file=sys.stderr)
         print(f"Polling interval: {polling_interval}s", file=sys.stderr)
@@ -145,7 +156,7 @@ class MongoDBLogStreamer:
 
         try:
             while True:
-                logs = self.fetch_logs(run_id, event_filter)
+                logs = self.fetch_logs(run_id, event_filter, user_id)
 
                 for log in logs:
                     print(self.format_log_entry(log))
@@ -175,14 +186,17 @@ Examples:
   # Stream all logs for a run
   python mongodb_logstream.py --run-name my-scan-run
 
+  # Stream logs for a specific user
+  python mongodb_logstream.py --run-name my-scan-run --user-id alice
+
   # Stream only vulnerability-related events
   python mongodb_logstream.py --run-name my-scan-run --events vuln_plan,vuln_step_start,vuln_step_complete,vulnerability_found
 
   # Custom polling interval
   python mongodb_logstream.py --run-name my-scan-run --polling 5
 
-  # Stream specific events with custom polling
-  python mongodb_logstream.py --run-name my-scan-run --events agent_creation,tool_execution_start --polling 1
+  # Stream specific events for a user with custom polling
+  python mongodb_logstream.py --run-name my-scan-run --user-id alice --events agent_creation,tool_execution_start --polling 1
         """
     )
 
@@ -190,6 +204,11 @@ Examples:
         "--run-name",
         required=True,
         help="Run name (run_id) to stream logs from"
+    )
+
+    parser.add_argument(
+        "--user-id",
+        help="User ID to filter logs (default: all users)"
     )
 
     parser.add_argument(
@@ -236,6 +255,7 @@ Examples:
         streamer.stream_logs(
             run_id=args.run_name,
             event_filter=event_filter,
+            user_id=args.user_id,
             polling_interval=args.polling
         )
 
