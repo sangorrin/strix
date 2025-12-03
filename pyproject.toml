@@ -48,7 +48,6 @@ uvicorn = "*"
 litellm = { version = "~1.79.1", extras = ["proxy"] }
 openai = ">=1.99.5,<1.100.0"
 tenacity = "^9.0.0"
-pymongo = ">=4.10.0"
 numpydoc = "^1.8.0"
 pydantic = {extras = ["email"], version = "^2.11.3"}
 ipython = "^9.3.0"
@@ -62,6 +61,7 @@ xmltodict = "^0.13.0"
 pyte = "^0.8.1"
 requests = "^2.32.0"
 libtmux = "^0.46.2"
+pymongo = "^4.15.5"
 
 [tool.poetry.group.dev.dependencies]
 # Type checking and static analysis
