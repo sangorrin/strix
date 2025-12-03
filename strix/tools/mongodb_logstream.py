@@ -208,14 +208,16 @@ Examples:
 
     parser.add_argument(
         "--user-id",
-        help="User ID to filter logs (default: all users)"
+        default="default_user",
+        help="User ID to filter logs (default: default_user)"
     )
 
     parser.add_argument(
         "--events",
         help="Comma-separated list of event types to filter (default: all events). "
-             "Examples: vuln_plan, agent_creation, tool_execution_start, tool_execution_complete, "
-             "vuln_step_start, vuln_step_complete, vulnerability_found, scan_complete"
+             "Available events: live_stats_update, vuln_plan, vulnerability_found, scan_complete, "
+             "agent_creation, tool_execution_start, tool_execution_complete, agent_status_update, "
+             "scan_config_set, llm_request, llm_response"
     )
 
     parser.add_argument(
