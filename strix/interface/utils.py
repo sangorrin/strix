@@ -138,6 +138,24 @@ def build_live_stats_text(tracer: Any) -> Text:
     tool_count = tracer.get_real_tool_count()
     agent_count = len(tracer.agents)
 
+    # Log live stats event to MongoDB
+    try:
+        import strix.tools.mongodb_logger as mongodb_logger
+        logger_proxy = mongodb_logger.get_logger(
+            run_id=tracer.run_id,
+            agent_id="system",
+            user_id=getattr(tracer, 'user_id', 'default_user')
+        )
+        logger_proxy.info({
+            "event": "live_stats_update",
+            "vulnerabilities": vuln_count,
+            "agents": agent_count,
+            "tools": tool_count,
+            "llm_stats": tracer.get_total_llm_stats()
+        })
+    except Exception:  # noqa: BLE001
+        pass  # Don't let logging errors interrupt the stats display
+
     stats_text.append("🔍 Vulnerabilities: ", style="bold white")
     stats_text.append(f"{vuln_count}", style="dim white")
     stats_text.append("\n")

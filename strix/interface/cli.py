@@ -155,8 +155,11 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
     try:
         console.print()
 
+        live_stats_seconds = getattr(args, 'live_stats_seconds', 30)
+        refresh_rate = 1.0 / live_stats_seconds if live_stats_seconds > 0 else 0.5
+
         with Live(
-            create_live_status(), console=console, refresh_per_second=2, transient=False
+            create_live_status(), console=console, refresh_per_second=refresh_rate, transient=False
         ) as live:
             stop_updates = threading.Event()
 
@@ -164,7 +167,7 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
                 while not stop_updates.is_set():
                     try:
                         live.update(create_live_status())
-                        time.sleep(2)
+                        time.sleep(live_stats_seconds)
                     except Exception:  # noqa: BLE001
                         break
 

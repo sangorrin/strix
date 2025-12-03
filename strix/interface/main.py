@@ -320,6 +320,13 @@ Examples:
         ),
     )
 
+    parser.add_argument(
+        "--live-stats-seconds",
+        type=int,
+        default=30,
+        help="Interval in seconds for updating live stats in non-interactive mode (default: 30)",
+    )
+
     args = parser.parse_args()
 
     if args.instruction:
