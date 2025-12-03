@@ -84,7 +84,7 @@ strix --target ./app-directory
 
 ## ☁️ Run Strix in Cloud
 
-Want to skip the local setup, API keys, and unpredictable LLM costs? Run the hosted cloud version of Strix at **[app.usestrix.com](https://app.usestrix.com)**.
+Want to skip the local setup, API keys, and unpredictable LLM costs? Run the hosted cloud version of Strix at **[app.usestrix.com](https://usestrix.com)**.
 
 Launch a scan in just a few minutes—no setup or configuration required—and you’ll get:
 
@@ -93,7 +93,7 @@ Launch a scan in just a few minutes—no setup or configuration required—and y
 - **CI/CD and GitHub integrations** to block risky changes before production
 - **Continuous monitoring** so new vulnerabilities are caught quickly
 
-[**Run your first pentest now →**](https://app.usestrix.com)
+[**Run your first pentest now →**](https://usestrix.com)
 
 ---
 
@@ -234,6 +234,10 @@ Have questions? Found a bug? Want to contribute? **[Join our Discord!](https://d
 ## 🌟 Support the Project
 
 **Love Strix?** Give us a ⭐ on GitHub!
+## 🙏 Acknowledgements
+
+Strix builds on the incredible work of open-source projects like [LiteLLM](https://github.com/BerriAI/litellm), [Caido](https://github.com/caido/caido), [ProjectDiscovery](https://github.com/projectdiscovery), [Playwright](https://github.com/microsoft/playwright), and [Textual](https://github.com/Textualize/textual). Huge thanks to their maintainers!
+
 
 > [!WARNING]
 > Only test apps you own or have permission to test. You are responsible for using Strix ethically and legally.
