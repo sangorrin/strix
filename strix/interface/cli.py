@@ -1,4 +1,5 @@
 import atexit
+import os
 import signal
 import sys
 import threading
@@ -165,7 +166,7 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
                 while not stop_updates.is_set():
                     try:
                         live.update(create_live_status())
-                        time.sleep(2)
+                        time.sleep(int(os.getenv("STRIX_REFRESH_SECONDS", "2")))
                     except Exception:  # noqa: BLE001
                         break
 

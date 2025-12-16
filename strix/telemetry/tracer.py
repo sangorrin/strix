@@ -1,6 +1,8 @@
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+import os
+import strix.tools.mongodb_logger as mongodb_logger
 from typing import TYPE_CHECKING, Any, Optional
 from uuid import uuid4
 
@@ -27,6 +29,7 @@ class Tracer:
     def __init__(self, run_name: str | None = None):
         self.run_name = run_name
         self.run_id = run_name or f"run-{uuid4().hex[:8]}"
+        self.user_id = os.getenv("STRIX_USER_ID", "default_user")
         self.start_time = datetime.now(UTC).isoformat()
         self.end_time: str | None = None
 
@@ -42,6 +45,7 @@ class Tracer:
         self.run_metadata: dict[str, Any] = {
             "run_id": self.run_id,
             "run_name": self.run_name,
+            "user_id": self.user_id,
             "start_time": self.start_time,
             "end_time": None,
             "targets": [],
@@ -88,6 +92,20 @@ class Tracer:
         self.vulnerability_reports.append(report)
         logger.info(f"Added vulnerability report: {report_id} - {title}")
 
+        # MongoDB: vulnerability_found event.
+        try:
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=self.run_id, agent_id="system", agent_name="system", user_id=self.user_id)
+            logger_proxy.info({
+                "event": "vulnerability_found",
+                "report_id": report_id,
+                "title": title.strip(),
+                "severity": severity.lower().strip(),
+                "content": content.strip(),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log vulnerability report to MongoDB: {e}")
+
         if self.vulnerability_found_callback:
             self.vulnerability_found_callback(
                 report_id, title.strip(), content.strip(), severity.lower().strip()
@@ -110,10 +128,23 @@ class Tracer:
         }
 
         logger.info(f"Set final scan result: success={success}")
+
+        # MongoDB: scan_complete event.
+        try:
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=self.run_id, agent_id="system", agent_name="system", user_id=self.user_id)
+            logger_proxy.info({
+                "event": "scan_complete",
+                "success": success,
+                "vulnerabilities_found": len(self.vulnerability_reports),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log scan completion to MongoDB: {e}")
+
         self.save_run_data(mark_complete=True)
 
-    def log_agent_creation(
-        self, agent_id: str, name: str, task: str, parent_id: str | None = None
+    def log_agent_creation(self, agent_id: str, name: str, task: str, parent_id: str | None = None,
+                           prompt_modules: list[str] | None = None, max_iterations: int | None = None,
     ) -> None:
         agent_data: dict[str, Any] = {
             "id": agent_id,
@@ -121,12 +152,32 @@ class Tracer:
             "task": task,
             "status": "running",
             "parent_id": parent_id,
+            "prompt_modules": prompt_modules or [],
+            "max_iterations": max_iterations,
             "created_at": datetime.now(UTC).isoformat(),
             "updated_at": datetime.now(UTC).isoformat(),
             "tool_executions": [],
         }
 
         self.agents[agent_id] = agent_data
+
+        # MongoDB: agent_creation event.
+        try:
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=self.run_id, agent_id=agent_id, agent_name=name, user_id=self.user_id)
+
+            log_payload = {
+                "event": "agent_creation",
+                "name": name,
+                "task": task,
+                "parent_id": parent_id,
+                "prompt_modules": prompt_modules or [],
+                "max_iterations": max_iterations,
+            }
+
+            logger_proxy.info(log_payload)
+        except Exception as e:
+            logger.warning(f"Failed to log agent creation to MongoDB: {e}")
 
     def log_chat_message(
         self,
@@ -150,7 +201,9 @@ class Tracer:
         self.chat_messages.append(message_data)
         return message_id
 
-    def log_tool_execution_start(self, agent_id: str, tool_name: str, args: dict[str, Any]) -> int:
+    def log_tool_execution_start(
+        self, agent_id: str, tool_name: str, args: dict[str, Any], iteration: int | None = None
+    ) -> int:
         execution_id = self._next_execution_id
         self._next_execution_id += 1
 
@@ -165,12 +218,35 @@ class Tracer:
             "timestamp": now,
             "started_at": now,
             "completed_at": None,
+            "iteration": iteration,
         }
 
         self.tool_executions[execution_id] = execution_data
 
         if agent_id in self.agents:
             self.agents[agent_id]["tool_executions"].append(execution_id)
+
+        # MongoDB: tool_execution_start event.
+        try:
+            agent_info = self.agents.get(agent_id, {})
+            agent_name = agent_info.get("name", {})
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=self.run_id, agent_id=agent_id, agent_name=agent_name, user_id=self.user_id)
+
+            # Enrich tool execution logs for vulnerability-focused agents
+            payload = {
+                "event": "tool_execution_start",
+                "execution_id": execution_id,
+                "tool_name": tool_name,
+                "args": args,
+                "iteration": iteration if iteration is not None else "N/A",
+                "max_iterations": agent_info.get("max_iterations", "N/A"),
+                "prompt_modules": agent_info.get("prompt_modules", []),
+            }
+
+            logger_proxy.info(payload)
+        except Exception as e:
+            logger.warning(f"Failed to log tool execution start to MongoDB: {e}")
 
         return execution_id
 
@@ -182,6 +258,33 @@ class Tracer:
             self.tool_executions[execution_id]["result"] = result
             self.tool_executions[execution_id]["completed_at"] = datetime.now(UTC).isoformat()
 
+            # MongoDB: tool_execution_complete event.
+            try:
+                from strix.tools.executor import remove_screenshot_from_result
+
+                exec_data = self.tool_executions[execution_id]
+                agent_id = exec_data.get("agent_id", "unknown")
+                agent_info = self.agents.get(agent_id, {})
+                agent_name = agent_info.get("name", "unknown")
+                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, agent_name=agent_name, user_id=self.user_id)
+
+                # Redact screenshot data from result for logging
+                result_for_log = remove_screenshot_from_result(result) if result else result
+
+                payload = {
+                    "event": "tool_execution_complete",
+                    "execution_id": execution_id,
+                    "tool_name": exec_data.get("tool_name"),
+                    "status": status,
+                    "iteration": exec_data.get("iteration", "N/A"),
+                    "max_iterations": agent_info.get("max_iterations", "N/A"),
+                    "result": result_for_log,
+                }
+
+                logger_proxy.info(payload)
+            except Exception as e:
+                logger.warning(f"Failed to log tool execution completion to MongoDB: {e}")
+
     def update_agent_status(
         self, agent_id: str, status: str, error_message: str | None = None
     ) -> None:
@@ -190,6 +293,20 @@ class Tracer:
             self.agents[agent_id]["updated_at"] = datetime.now(UTC).isoformat()
             if error_message:
                 self.agents[agent_id]["error_message"] = error_message
+
+            # MongoDB: agent_status_update event.
+            try:
+                agent_name = self.agents[agent_id].get("name", "unknown")
+                logger_proxy = mongodb_logger.get_logger(run_id=self.run_id, agent_id=agent_id, agent_name=agent_name, user_id=self.user_id)
+                log_content = {
+                    "event": "agent_status_update",
+                    "status": status,
+                }
+                if error_message:
+                    log_content["error_message"] = error_message
+                logger_proxy.info(log_content)
+            except Exception as e:
+                logger.warning(f"Failed to log agent status update to MongoDB: {e}")
 
     def set_scan_config(self, config: dict[str, Any]) -> None:
         self.scan_config = config

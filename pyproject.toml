@@ -48,6 +48,7 @@ python = "^3.12"
 # Core CLI dependencies
 litellm = { version = "~1.80.7", extras = ["proxy"] }
 tenacity = "^9.0.0"
+pymongo = ">=4.10.0"
 pydantic = {extras = ["email"], version = "^2.11.3"}
 rich = "*"
 docker = "^7.1.0"

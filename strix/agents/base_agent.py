@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import copy
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -89,6 +90,8 @@ class BaseAgent(metaclass=AgentMeta):
                 name=self.state.agent_name,
                 task=self.state.task,
                 parent_id=self.state.parent_id,
+                prompt_modules=list(self.llm_config.prompt_modules or []),
+                max_iterations=self.state.max_iterations,
             )
             if self.state.parent_id is None:
                 scan_config = tracer.scan_config or {}
@@ -351,7 +354,68 @@ class BaseAgent(metaclass=AgentMeta):
         self.state.add_message("user", task)
 
     async def _process_iteration(self, tracer: Optional["Tracer"]) -> bool:
-        response = await self.llm.generate(self.state.get_conversation_history())
+        # MongoDB: llm_request event.
+        conversation_history = self.state.get_conversation_history()
+        try:
+            import strix.tools.mongodb_logger as mongodb_logger
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=tracer.run_id if tracer else "unknown",
+                agent_id=self.state.agent_id,
+                user_id=tracer.user_id if tracer else "default_user"
+            )
+
+            # Truncate conversation history for logging (deep copy to avoid modifying original)
+            truncated_history = copy.deepcopy(conversation_history[-1:]) if conversation_history else []
+
+            for msg in truncated_history:
+                if isinstance(msg.get("content"), list):
+                    for block in msg["content"]:
+                        if isinstance(block, dict) and block.get("type") == "image_url":
+                            block["image_url"]["url"] = "[REDACTED_FOR_LOGGING]"
+
+            logger_proxy.debug({
+                "event": "llm_request",
+                "iteration": self.state.iteration,
+                "max_iterations": self.state.max_iterations,
+                "model": self.llm_config.model_name if self.llm_config else "unknown",
+                "total_messages": len(conversation_history),
+                "conversation_history": truncated_history
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log LLM request to MongoDB: {e}")
+
+        response = await self.llm.generate(conversation_history)
+
+        # MongoDB: llm_response event.
+        try:
+            import strix.tools.mongodb_logger as mongodb_logger
+            logger_proxy = mongodb_logger.get_logger(
+                run_id=tracer.run_id if tracer else "unknown",
+                agent_id=self.state.agent_id,
+                user_id=tracer.user_id if tracer else "default_user"
+            )
+
+            response_content = (response.content or "").strip()
+            if len(response_content) > 2000:
+                truncated_chars = len(response_content) - 2000
+                response_preview = (
+                    response_content[:1000]
+                    + f"\n...[truncated {truncated_chars} chars]...\n"
+                    + response_content[-1000:]
+                )
+            else:
+                response_preview = response_content
+
+            log_entry = {
+                "event": "llm_response",
+                "iteration": self.state.iteration,
+                "response_preview": response_preview,
+                "tool_invocations": response.tool_invocations if hasattr(response, "tool_invocations") else None,
+            }
+
+            logger_proxy.debug(log_entry)
+        except Exception as e:
+            logger.warning(f"Failed to log LLM response to MongoDB: {e}")
 
         content_stripped = (response.content or "").strip()
 
